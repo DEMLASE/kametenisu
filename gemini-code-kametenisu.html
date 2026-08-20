@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>5さいじむけ テニスゲーム</title>
+  <!-- p5.js ライブラリの読み込み -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <style>
+    * {
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+      touch-action: none;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background-color: #1a1a1a;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      max-width: 100vw;
+      max-height: 100vh;
+      object-fit: contain;
+    }
+  </style>
+</head>
+<body>
+
+<script>
+// 5さいじむけ テニスゲーム (p5.js)
+
+// ゲームのじょうたいかんり
+// "MODE" -> "SELECT" -> "SERVE" -> "PLAYING" -> "GAME_OVER"
+let gameState = "MODE"; 
+let playMode = "1P"; // "1P" (ひとり) または "2P" (ふたり)
+let score1 = 0, score2 = 0;
+let games1 = 0, games2 = 0;
+let winner = 0;
+let server = 1; // 1: P1, 2: P2
+
+// ボール
+let ballX, ballY, ballSpeedX, ballSpeedY;
+let ballSize = 45;
+
+// ラケット (左右)
+let paddleHeight = 110;
+let paddleWidth = 22;
+let p1Y, p2Y;
+let paddleSpeed = 7;
+
+// キャラクター設定 ("turtle" または "rabbit")
+let p1Char = "turtle";
+let p2Char = "rabbit";
+
+// 演出用の変数
+let goalTimer = 0;       // 得点演出の残り時間
+let goalScorer = 0;      // 得点したプレイヤー (1 または 2)
+let goalParticles = [];  // 得点時のキラキラ星エフェクト
+let rallyCount = 0;      // ラリーの回数
+let hitEffects = [];     // 打撃・バウンド時のエフェクト
+
+// キー状態
+let keys = {};
+
+// 演出用パーティクル (紙吹雪)
+let confetti = [];
+
+function setup() {
+  createCanvas(800, 500);
+  p1Y = height / 2;
+  p2Y = height / 2;
+  textAlign(CENTER, CENTER);
+}
+
+function draw() {
+  background(90, 190, 110); // コートの緑
+
+  if (gameState === "MODE") {
+    drawModeSelectScene();
+  } else if (gameState === "SELECT") {
+    drawSelectScene();
+  } else if (gameState === "SERVE" || gameState === "PLAYING") {
+    drawGameScene();
+  } else if (gameState === "GAME_OVER") {
+    drawGameScene();
+    drawWinnerScene();
+  }
+}
+
+// ==========================================
+// 1. モード選択画面
+// ==========================================
+function drawModeSelectScene() {
+  background(255, 220, 150);
+
+  noStroke();
+  fill(0);
+  textSize(44);
+  textStyle(BOLD);
+  text("モード せんたく", width / 2, 90);
+
+  drawModeButton(width / 4, height / 2, "ひとりであそぶ", "🤖 vs 👤", color(100, 210, 255));
+  drawModeButton((width / 4) * 3, height / 2, "ふたりであそぶ", "👤 vs 👤", color(255, 140, 160));
+}
+
+function drawModeButton(x, y, label, icon, col) {
+  push();
+  translate(x, y);
+  rectMode(CENTER);
+
+  let w = 240, h = 180;
+  if (dist(mouseX, mouseY, x, y) < w / 2) {
+    scale(1.05);
+    cursor(HAND);
+  } else {
+    cursor(ARROW);
+  }
+
+  fill(col);
+  stroke(255);
+  strokeWeight(6);
+  rect(0, 0, w, h, 20);
+
+  noStroke();
+  fill(0);
+  textSize(40);
+  text(icon, 0, -25);
+  textSize(24);
+  textStyle(BOLD);
+  text(label, 0, 35);
+  pop();
+}
+
+// ==========================================
+// 2. キャラクター選択画面
+// ==========================================
+function drawSelectScene() {
+  background(150, 230, 255);
+  
+  noStroke();
+  fill(0);
+  textSize(44);
+  textStyle(BOLD);
+  text("キャラクター せんたく", width / 2, 80);
+  
+  textSize(22);
+  fill(50);
+  text("どっちで あそぶ？ タップしてね！", width / 2, 130);
+
+  drawCharacterButton(width / 4, height / 2, "turtle", "かめ", color(100, 200, 100));
+  drawCharacterButton((width / 4) * 3, height / 2, "rabbit", "うさぎ", color(255, 180, 180));
+}
+
+function drawCharacterButton(x, y, type, name, col) {
+  push();
+  translate(x, y);
+  
+  let s = 180;
+  if (dist(mouseX, mouseY, x, y) < s / 2) {
+    s = 200;
+    cursor(HAND);
+  } else {
+    cursor(ARROW);
+  }
+  
+  fill(col);
+  stroke(255);
+  strokeWeight(8);
+  ellipse(0, 0, s, s);
+  
+  scale(1.5);
+  if (type === "rabbit") {
+    drawRabbit(0, 0, false);
+  } else {
+    drawTurtle(0, 0, false);
+  }
+  
+  fill(0);
+  noStroke();
+  textSize(24);
+  textStyle(BOLD);
+  text(name, 0, s / 2.5);
+  pop();
+}
+
+// ==========================================
+// 3. クリック & タッチ操作
+// ==========================================
+function touchStarted() {
+  initAudio(); // iOS向け音声有効化
+
+  if (gameState === "MODE") {
+    if (dist(mouseX, mouseY, width / 4, height / 2) < 120) {
+      playMode = "1P";
+      gameState = "SELECT";
+    } else if (dist(mouseX, mouseY, (width / 4) * 3, height / 2) < 120) {
+      playMode = "2P";
+      gameState = "SELECT";
+    }
+  } else if (gameState === "SELECT") {
+    if (dist(mouseX, mouseY, width / 4, height / 2) < 100) {
+      p1Char = "turtle";
+      p2Char = "rabbit";
+      startNewGame();
+    } else if (dist(mouseX, mouseY, (width / 4) * 3, height / 2) < 100) {
+      p1Char = "rabbit";
+      p2Char = "turtle";
+      startNewGame();
+    }
+  } else if (gameState === "SERVE") {
+    let d = dist(mouseX, mouseY, ballX, ballY);
+    if (d < ballSize * 2) {
+      launchServe();
+    }
+  } else if (gameState === "GAME_OVER") {
+    handleGameOverClick();
+  }
+  return false; // デフォルトのスクロール動作を無効化
+}
+
+function mouseClicked() {
+  touchStarted();
+}
+
+function startNewGame() {
+  score1 = 0; score2 = 0;
+  games1 = 0; games2 = 0;
+  p1Y = height / 2;
+  p2Y = height / 2;
+  prepareServe(1);
+}
+
+// ==========================================
+// 4. 試合画面 (ゲームメイン)
+// ==========================================
+function drawGameScene() {
+  background(90, 190, 110);
+  drawCourt();
+  updatePaddles();
+
+  drawPaddle(25, p1Y, color(255, 110, 130), "P1", p1Char);
+  drawPaddle(width - 25, p2Y, color(100, 160, 255), "P2", p2Char);
+
+  if (gameState === "SERVE") {
+    if (server === 1) {
+      ballX = 60;
+      ballY = p1Y;
+    } else {
+      ballX = width - 60;
+      ballY = p2Y;
+    }
+    
+    if (frameCount % 30 < 20) {
+      drawBall(ballX, ballY);
+    }
+    drawServeGui();
+
+  } else if (gameState === "PLAYING") {
+    if (goalTimer === 0) {
+      updateBall();
+      drawBall(ballX, ballY);
+    }
+  }
+  
+  drawHitEffects();
+  drawScoreBoard();
+  drawRallyCount();
+  drawGoalEffect();
+}
+
+function launchServe() {
+  gameState = "PLAYING";
+  ballSpeedX = (server === 1) ? 4.5 : -4.5;
+  ballSpeedY = random(-2, 2);
+  rallyCount = 0;
+}
+
+function keyPressed() { keys[keyCode] = true; }
+function keyReleased() { keys[keyCode] = false; }
+
+function updatePaddles() {
+  if (gameState === "GAME_OVER") return;
+
+  // P1 (左) 操作
+  if (keys[87] || keys[119]) p1Y -= paddleSpeed;
+  if (keys[83] || keys[115]) p1Y += paddleSpeed;
+
+  if (mouseIsPressed && gameState === "PLAYING") {
+    if (playMode === "1P" || mouseX < width / 2) {
+      p1Y = mouseY;
+    }
+  }
+
+  // P2 (右) 操作
+  if (playMode === "1P") {
+    let cpuSpeed = 3.5;
+    if (p2Y < ballY - 10) p2Y += cpuSpeed;
+    else if (p2Y > ballY + 10) p2Y -= cpuSpeed;
+  } else {
+    if (keyIsDown(UP_ARROW)) p2Y -= paddleSpeed;
+    if (keyIsDown(DOWN_ARROW)) p2Y += paddleSpeed;
+
+    if (mouseIsPressed && gameState === "PLAYING" && mouseX >= width / 2) {
+      p2Y = mouseY;
+    }
+  }
+
+  p1Y = constrain(p1Y, paddleHeight / 2, height - paddleHeight / 2);
+  p2Y = constrain(p2Y, paddleHeight / 2, height - paddleHeight / 2);
+}
+
+function updateBall() {
+  ballX += ballSpeedX;
+  ballY += ballSpeedY;
+
+  // 上下の壁バウンド
+  if (ballY < ballSize / 2 || ballY > height - ballSize / 2) {
+    ballSpeedY *= -1;
+    addHitEffect(ballX, ballY, "wall");
+    playWallSound();
+  }
+
+  // P1 反射
+  if (
+    ballX - ballSize / 2 <= 25 + paddleWidth / 2 &&
+    ballX + ballSize / 2 >= 25 - paddleWidth / 2 &&
+    ballY >= p1Y - paddleHeight / 2 &&
+    ballY <= p1Y + paddleHeight / 2 &&
+    ballSpeedX < 0
+  ) {
+    ballSpeedX = abs(ballSpeedX) * 1.05;
+    ballSpeedY = (ballY - p1Y) * 0.12;
+    rallyCount++;
+    addHitEffect(ballX, ballY, "hit");
+    playHitSound();
+  }
+
+  // P2 反射
+  if (
+    ballX + ballSize / 2 >= width - 25 - paddleWidth / 2 &&
+    ballX - ballSize / 2 <= width - 25 + paddleWidth / 2 &&
+    ballY >= p2Y - paddleHeight / 2 &&
+    ballY <= p2Y + paddleHeight / 2 &&
+    ballSpeedX > 0
+  ) {
+    ballSpeedX = -abs(ballSpeedX) * 1.05;
+    ballSpeedY = (ballY - p2Y) * 0.12;
+    rallyCount++;
+    addHitEffect(ballX, ballY, "hit");
+    playHitSound();
+  }
+
+  // 得点判定
+  if (ballX < -30) {
+    score2++;
+    triggerGoalEffect(2);
+  } else if (ballX > width + 30) {
+    score1++;
+    triggerGoalEffect(1);
+  }
+}
+
+function addHitEffect(x, y, type) {
+  if (type === "hit") {
+    for (let i = 0; i < 12; i++) {
+      hitEffects.push({
+        x: x, y: y,
+        vx: random(-5, 5), vy: random(-5, 5),
+        size: random(10, 22),
+        life: 15,
+        type: "star"
+      });
+    }
+  } else if (type === "wall") {
+    hitEffects.push({
+      x: x, y: y,
+      size: 10,
+      life: 12,
+      type: "ring"
+    });
+  }
+}
+
+function drawHitEffects() {
+  for (let i = hitEffects.length - 1; i >= 0; i--) {
+    let e = hitEffects[i];
+    if (e.type === "star") {
+      e.x += e.vx;
+      e.y += e.vy;
+      e.size *= 0.9;
+      fill(255, 230, 50, e.life * 17);
+      noStroke();
+      ellipse(e.x, e.y, e.size);
+    } else if (e.type === "ring") {
+      e.size += 4;
+      noFill();
+      stroke(255, 255, 255, e.life * 20);
+      strokeWeight(3);
+      ellipse(e.x, e.y, e.size, e.size / 2);
+    }
+    e.life--;
+    if (e.life <= 0) hitEffects.splice(i, 1);
+  }
+}
+
+function drawRallyCount() {
+  if (rallyCount > 1 && gameState === "PLAYING") {
+    push();
+    translate(width / 2, 110);
+    fill(255, 255, 100);
+    stroke(0);
+    strokeWeight(4);
+    textSize(26);
+    textStyle(BOLD);
+    text(rallyCount + " れんぞく！", 0, 0);
+    pop();
+  }
+}
+
+function triggerGoalEffect(p) {
+  goalScorer = p;
+  goalTimer = 60;
+  playGoalSound();
+  
+  let starX = (p === 1) ? 60 : width - 60;
+  let starY = (p === 1) ? p1Y : p2Y;
+  
+  goalParticles = [];
+  for (let i = 0; i < 25; i++) {
+    goalParticles.push({
+      x: starX,
+      y: starY,
+      vx: random(-6, 6),
+      vy: random(-7, -2),
+      size: random(15, 30),
+      color: color(random(200, 255), random(200, 255), 0)
+    });
+  }
+}
+
+function drawGoalEffect() {
+  if (goalTimer <= 0) return;
+
+  for (let i = goalParticles.length - 1; i >= 0; i--) {
+    let p = goalParticles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.2;
+    
+    noStroke();
+    fill(p.color);
+    ellipse(p.x, p.y, p.size);
+  }
+
+  push();
+  translate(width / 2, height / 2 - 40);
+  let scaleFactor = map(goalTimer, 60, 50, 0, 1.2, true);
+  if (scaleFactor > 1) scaleFactor = 1;
+  scale(scaleFactor);
+
+  fill(255, 230, 0, 180);
+  ellipse(0, 0, 320, 100);
+
+  fill(255, 50, 80);
+  textSize(48);
+  textStyle(BOLD);
+  stroke(255);
+  strokeWeight(6);
+  text("とくてん！", 0, 0);
+  pop();
+
+  goalTimer--;
+
+  if (goalTimer === 0) {
+    checkGameWin(goalScorer === 1 ? 2 : 1);
+  }
+}
+
+function checkGameWin(nextServer) {
+  if (score1 >= 3) {
+    games1++;
+    score1 = 0; score2 = 0;
+    if (games1 >= 2) { triggerWinner(1); return; }
+  } else if (score2 >= 3) {
+    games2++;
+    score1 = 0; score2 = 0;
+    if (games2 >= 2) { triggerWinner(2); return; }
+  }
+  prepareServe(nextServer);
+}
+
+function prepareServe(p) {
+  server = p;
+  gameState = "SERVE";
+  rallyCount = 0;
+}
+
+// ==========================================
+// 5. 描画パーツ（キャラ・ボール・コート等）
+// ==========================================
+function drawCourt() {
+  stroke(255);
+  strokeWeight(5);
+  for (let i = 0; i < height; i += 30) {
+    line(width / 2, i, width / 2, i + 15);
+  }
+  noFill();
+  ellipse(width / 2, height / 2, 120, 120);
+  rectMode(CORNER);
+  rect(10, 10, width - 20, height - 20);
+}
+
+function drawScoreBoard() {
+  noStroke();
+  fill(255, 230, 80);
+  textSize(28);
+  text("★ ".repeat(score1), width / 4, 35);
+  textSize(18);
+  fill(255);
+  let p1Name = p1Char === "turtle" ? "かめ" : "うさぎ";
+  text(p1Name + " ゲーム: " + games1 + " / 2", width / 4, 65);
+
+  fill(255, 230, 80);
+  textSize(28);
+  text("★ ".repeat(score2), (width / 4) * 3, 35);
+  textSize(18);
+  fill(255);
+  let p2Name = p2Char === "turtle" ? "かめ" : "うさぎ";
+  text(p2Name + " ゲーム: " + games2 + " / 2", (width / 4) * 3, 65);
+}
+
+function drawBall(x, y) {
+  push();
+  translate(x, y);
+  stroke(0);
+  strokeWeight(3);
+  fill(255, 235, 50);
+  ellipse(0, 0, ballSize, ballSize);
+
+  fill(0);
+  noStroke();
+  ellipse(-7, -4, 5, 5);
+  ellipse(7, -4, 5, 5);
+  noFill();
+  stroke(0);
+  strokeWeight(2);
+  arc(0, 3, 14, 10, 0, PI);
+  pop();
+}
+
+function drawPaddle(x, y, col, label, pChar) {
+  push();
+  rectMode(CENTER);
+  stroke(0);
+  strokeWeight(3);
+  fill(col);
+  rect(x, y, paddleWidth, paddleHeight, 12);
+
+  let pNum = (x < width / 2) ? 1 : 2;
+  let jumpY = 0;
+  if (goalTimer > 0 && goalScorer === pNum) {
+    jumpY = -abs(sin(frameCount * 0.3)) * 35;
+  }
+
+  let charX = x + (x < width / 2 ? 30 : -30);
+  push();
+  translate(charX, y - paddleHeight / 2 + jumpY);
+  if (pChar === "rabbit") drawRabbit(0, 0, true);
+  else drawTurtle(0, 0, true);
+  pop();
+
+  fill(255);
+  textSize(14);
+  textStyle(BOLD);
+  text(label, x, y + paddleHeight / 2 + 20);
+  pop();
+}
+
+function drawRabbit(x, y, withFace) {
+  fill(255);
+  stroke(0);
+  strokeWeight(2);
+  ellipse(x - 12, y - 25, 15, 40);
+  ellipse(x + 12, y - 25, 15, 40);
+  ellipse(x, y, 50, 50);
+  
+  if (withFace) {
+    fill(0); noStroke();
+    ellipse(x - 8, y - 5, 5, 5);
+    ellipse(x + 8, y - 5, 5, 5);
+    fill(255, 150, 150);
+    ellipse(x, y + 5, 10, 8);
+    noFill(); stroke(0); strokeWeight(2);
+    arc(x, y + 10, 15, 10, 0, PI);
+  }
+}
+
+function drawTurtle(x, y, withFace) {
+  stroke(0); strokeWeight(2);
+  fill(100, 180, 100);
+  ellipse(x, y, 60, 50);
+  
+  fill(150, 220, 150);
+  ellipse(x - 25, y - 15, 15, 15);
+  ellipse(x + 25, y - 15, 15, 15);
+  ellipse(x - 20, y + 15, 15, 15);
+  ellipse(x + 20, y + 15, 15, 15);
+  triangle(x, y + 25, x - 5, y + 15, x + 5, y + 15);
+
+  if (withFace) {
+    ellipse(x, y - 10, 35, 35);
+    fill(0); noStroke();
+    ellipse(x - 6, y - 12, 5, 5);
+    ellipse(x + 6, y - 12, 5, 5);
+    noFill(); stroke(0); strokeWeight(2);
+    arc(x, y - 5, 12, 8, 0, PI);
+  }
+}
+
+function drawServeGui() {
+  push();
+  rectMode(CENTER);
+  stroke(255);
+  strokeWeight(2);
+  fill(0, 0, 0, 150);
+  let guiY = height - 40;
+  rect(width / 2, guiY, 420, 45, 10);
+  
+  noStroke();
+  fill(255);
+  textSize(18);
+  textStyle(BOLD);
+  text("ボールを タップ して サーブ！", width / 2, guiY);
+  pop();
+}
+
+// ==========================================
+// 6. 勝利演出画面
+// ==========================================
+function triggerWinner(p) {
+  winner = p;
+  gameState = "GAME_OVER";
+  confetti = [];
+  for (let i = 0; i < 80; i++) {
+    confetti.push({
+      x: random(width),
+      y: random(-height, 0),
+      size: random(8, 16),
+      speedY: random(2, 5),
+      speedX: random(-1.5, 1.5),
+      color: color(random(255), random(255), random(255))
+    });
+  }
+}
+
+function drawWinnerScene() {
+  for (let c of confetti) {
+    c.y += c.speedY;
+    c.x += c.speedX;
+    if (c.y > height) c.y = random(-20, 0);
+
+    noStroke();
+    fill(c.color);
+    rect(c.x, c.y, c.size, c.size);
+  }
+
+  rectMode(CENTER);
+  stroke(255);
+  strokeWeight(4);
+  fill(0, 0, 0, 180);
+  rect(width / 2, height / 2, 420, 300, 20);
+
+  textSize(60);
+  text("🏆", width / 2, height / 2 - 80);
+
+  noStroke();
+  fill(255, 220, 0);
+  textSize(32);
+  textStyle(BOLD);
+  let winCharName = (winner === 1) 
+    ? (p1Char === "turtle" ? "かめ" : "うさぎ")
+    : (p2Char === "turtle" ? "かめ" : "うさぎ");
+  text(winCharName + " の かち！", width / 2, height / 2 + 10);
+
+  drawGameOverButton(width / 2, height / 2 + 80, "もういちどあそぶ");
+}
+
+function drawGameOverButton(x, y, txt) {
+  push();
+  translate(x, y);
+  rectMode(CENTER);
+  
+  let w = 250, h = 60;
+  if (mouseX > x - w / 2 && mouseX < x + w / 2 && mouseY > y - h / 2 && mouseY < y + h / 2) {
+    fill(255, 255, 100);
+    scale(1.05);
+    cursor(HAND);
+  } else {
+    fill(255, 230, 80);
+    cursor(ARROW);
+  }
+  
+  stroke(255);
+  strokeWeight(4);
+  rect(0, 0, w, h, 15);
+  
+  noStroke();
+  fill(0);
+  textSize(24);
+  textStyle(BOLD);
+  text(txt, 0, 0);
+  pop();
+}
+
+function handleGameOverClick() {
+  let bx = width / 2;
+  let by = height / 2 + 80;
+  if (mouseX > bx - 125 && mouseX < bx + 125 && mouseY > by - 30 && mouseY < by + 30) {
+    gameState = "MODE";
+    score1 = 0; score2 = 0;
+    games1 = 0; games2 = 0;
+    confetti = [];
+  }
+}
+
+// ==========================================
+// 7. 効果音（Web Audio API）
+// ==========================================
+let audioCtx = null;
+
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+}
+
+function playHitSound() {
+  if (!audioCtx) return;
+  let osc = audioCtx.createOscillator();
+  let gain = audioCtx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1);
+
+  gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.1);
+}
+
+function playWallSound() {
+  if (!audioCtx) return;
+  let osc = audioCtx.createOscillator();
+  let gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+
+  gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.08);
+}
+
+function playGoalSound() {
+  if (!audioCtx) return;
+  let notes = [523.25, 659.25, 783.99, 1046.50];
+  notes.forEach((freq, idx) => {
+    let osc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime + idx * 0.08);
+
+    gain.gain.setValueAtTime(0.15, audioCtx.currentTime + idx * 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + idx * 0.08 + 0.12);
+
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(audioCtx.currentTime + idx * 0.08);
+    osc.stop(audioCtx.currentTime + idx * 0.08 + 0.12);
+  });
+}
+</script>
+</body>
+</html>
